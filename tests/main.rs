@@ -1,33 +1,29 @@
-use std::{
-    collections::VecDeque,
-    io::{BufRead, Write},
-};
-
 use redis_starter_rust::connection::handle_connection;
+
+use crate::helpers::MockStream;
 
 pub mod helpers;
 
 #[test]
 fn test_pong() {
-    let mut stream = VecDeque::new();
-    stream.write_all(b"PING\r\n").unwrap();
+    let mut stream = MockStream::default();
+
+    stream.send("PING\r\n");
     handle_connection(&mut stream).unwrap();
-    let mut ret = String::new();
-    stream.read_line(&mut ret).unwrap();
-    assert_eq!("+PONG\r\n".to_owned(), ret);
+
+    assert_eq!("+PONG\r\n".to_owned(), stream.received);
 }
 
 #[test]
 fn test_multiple_pong() {
-    let mut stream = VecDeque::new();
-    stream.write_all(b"PING\r\n").unwrap();
-    handle_connection(&mut stream).unwrap();
-    stream.write_all(b"PING\r\n").unwrap();
-    handle_connection(&mut stream).unwrap();
-    let mut ret = String::new();
-    stream.read_line(&mut ret).unwrap();
-    assert_eq!("+PONG\r\n".to_owned(), ret);
-    let mut ret = String::new();
-    stream.read_line(&mut ret).unwrap();
-    assert_eq!("+PONG\r\n".to_owned(), ret);
+    let mut stream = MockStream::default();
+    let mut expected = String::new();
+
+    for _ in 0..2 {
+        stream.send("PING\r\n");
+        handle_connection(&mut stream).unwrap();
+        expected += "+PONG\r\n";
+    }
+
+    assert_eq!(expected, stream.received);
 }
