@@ -1,22 +1,21 @@
-use anyhow::{anyhow, Result};
-use std::{
-    io::{Read, Write},
-    str,
-};
+use anyhow::Result;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
-pub fn handle_connection(mut stream: impl Read + Write) -> Result<()> {
-    let mut buffer: [u8; 1024] = [0; 1024];
-    match stream.read(&mut buffer)? {
-        0 => Err(anyhow!("Connection closed")),
-        _ => {
-            let client_command = str::from_utf8(&buffer)?;
-            client_command
-                .lines()
-                .filter(|l| *l == "PING")
-                .for_each(|_| {
-                    stream.write_all(b"+PONG\r\n").unwrap();
-                });
-            Ok(())
+pub async fn handle_connection<Reader, Writer>(reader: Reader, mut writer: Writer) -> Result<()>
+where
+    Reader: AsyncRead + Unpin,
+    Writer: AsyncWrite + Unpin,
+{
+    let mut line = String::new();
+    let mut reader = BufReader::new(reader);
+
+    loop {
+        if let Ok(bytes_read) = reader.read_line(&mut line).await {
+            if bytes_read == 0 {
+                break Ok(());
+            }
+            writer.write_all(b"+PONG\r\n").await.unwrap();
         }
+        line.clear();
     }
 }

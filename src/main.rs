@@ -1,19 +1,19 @@
-use std::net::TcpListener;
-
 use connection::handle_connection;
+use tokio::net::TcpListener;
 
 pub mod connection;
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-
-    for mut stream in listener.incoming().flatten() {
-        loop {
-            let ret = handle_connection(&mut stream);
-            if ret.is_err() {
-                println!("Error encountered! {:?}", ret);
-                break;
-            }
+#[tokio::main]
+async fn main() {
+    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    loop {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let (reader, writer) = socket.split();
+                handle_connection(reader, writer)
+                    .await
+                    .expect("Failed to handle connection");
+            });
         }
     }
 }
