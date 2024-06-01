@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 pub async fn handle_connection<Reader, Writer>(reader: Reader, mut writer: Writer) -> Result<()>
 where
