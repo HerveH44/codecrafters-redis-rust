@@ -1,40 +1,5 @@
-use anyhow::Result;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-
-pub async fn handle_connection<Reader, Writer>(reader: Reader, mut writer: Writer) -> Result<()>
-where
-    Reader: AsyncRead + Unpin,
-    Writer: AsyncWrite + Unpin,
-{
-    let mut reader = BufReader::new(reader);
-
-    loop {
-        let mut buf: [u8; 1024] = [0; 1024];
-        if let Ok(bytes_read) = reader.read(&mut buf).await {
-            if bytes_read == 0 {
-                break Ok(());
-            }
-            let line = std::str::from_utf8(&buf).unwrap();
-            println!("{line}");
-            let mut parser = Parser::new(&buf)?;
-            let value = parser.get_value()?;
-            println!("received value: {:?}", value);
-            let commands = parse_command(&value);
-            for command in commands {
-                match command {
-                    RedisCommand::PING => {
-                        writer.write_all(b"+PONG\r\n").await.unwrap();
-                    }
-                    RedisCommand::ECHO(to_echo) => {
-                        let response = format!("+{}\r\n", to_echo);
-                        writer.write_all(response.as_bytes()).await.unwrap();
-                    }
-                }
-            }
-        }
-    }
-}
 use anyhow::Context;
+use anyhow::Result;
 use core::panic;
 use std::str::Lines;
 
@@ -56,8 +21,8 @@ pub fn parse_command(value: &Value) -> Vec<RedisCommand> {
             while let Some(ele) = iter.next() {
                 match ele {
                     Value::SimpleString(s) | Value::BulkString(s) => match s.as_str() {
-                        "PING" => new_array.push(RedisCommand::PING),
-                        "ECHO" => {
+                        "ping" => new_array.push(RedisCommand::PING),
+                        "echo" => {
                             let Ok(to_echo) = iter
                                 .next()
                                 .context("there should be another command to echo")
@@ -110,11 +75,11 @@ impl<'a> Parser<'a> {
                 let mut chars = first_line.chars();
                 chars.next();
                 let val = chars.as_str();
-                Ok(Value::SimpleString(val.to_owned()))
+                Ok(Value::SimpleString(val.to_lowercase().to_owned()))
             }
             '$' => {
                 let line = self.lines.next().context("should have another line")?;
-                let val = Value::BulkString(line.to_owned());
+                let val = Value::BulkString(line.to_lowercase().to_owned());
                 Ok(val)
             }
             '*' => {
@@ -133,5 +98,46 @@ impl<'a> Parser<'a> {
             }
             _ => Err(anyhow::format_err!("Not the first char I am expecting")),
         }
+    }
+}
+
+mod test {
+    use crate::parser::*;
+
+    #[test]
+    fn can_parse_simple_string() {
+        let mut parser = Parser::new(b"+OK\r\n").unwrap();
+        let ret = parser.get_value().unwrap();
+        assert_eq!(Value::SimpleString("ok".to_owned()), ret);
+    }
+
+    #[test]
+    fn can_parse_bulk_string() {
+        let mut parser = Parser::new(b"$5\r\nhello\r\n").unwrap();
+        let ret = parser.get_value().unwrap();
+        assert_eq!(Value::BulkString("hello".to_owned()), ret);
+    }
+
+    #[test]
+    fn can_parse_echo() {
+        let mut parser = Parser::new(b"*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n").unwrap();
+        let ret = parser.get_value().unwrap();
+        assert_eq!(
+            Value::Array(vec![
+                Value::BulkString("echo".to_owned()),
+                Value::BulkString("hey".to_owned())
+            ]),
+            ret
+        );
+    }
+
+    #[test]
+    fn can_parse_echo_command() {
+        let mut parser = Parser::new(b"*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n").unwrap();
+        let ret = parser.get_value().unwrap();
+
+        let command = parse_command(&ret);
+
+        assert_eq!(vec![RedisCommand::ECHO("hey".to_owned())], command);
     }
 }

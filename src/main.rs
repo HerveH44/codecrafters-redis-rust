@@ -2,6 +2,8 @@ use connection::handle_connection;
 use tokio::net::TcpListener;
 
 pub mod connection;
+pub mod parser;
+pub mod resp;
 
 #[tokio::main]
 async fn main() {
